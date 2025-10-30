@@ -1,0 +1,61 @@
+name: Build & Publish GranthOS ISO
+
+on:
+  push:
+    branches: [ main ]      # build each push to main
+  workflow_dispatch: {}      # manual trigger if needed
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      BUILDS_BUCKET: ${{ secrets.BUILDS_BUCKET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt update
+          sudo apt install -y clang lld nasm xorriso jq awscli unzip curl
+
+      - name: Get Limine (binary)
+        run: |
+          LIMINE_VER="v10.2.1-binary"
+          curl -L -o limine.zip "https://github.com/limine-bootloader/limine/archive/refs/tags/${LIMINE_VER}.zip"
+          unzip -q limine.zip
+          echo "LIMINE_DIR=$(pwd)/limine-${LIMINE_VER}" >> $GITHUB_ENV
+
+      - name: Build ISO
+        run: |
+          # Point Makefile to Limine folder inside CI workspace
+          sed -i "s|/mnt/c/limine-10.2.1-binary|${LIMINE_DIR}|" Makefile
+          make clean && make
+          sha256sum out/GranthOS.iso | tee checksums.txt
+
+      - name: Create manifest.json
+        run: |
+          SHA=$(cut -d' ' -f1 checksums.txt)
+          TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          cat > manifest.json <<EOF
+          {
+            "version": "latest",
+            "iso": "https://${BUILDS_BUCKET}.s3.${AWS_REGION}.amazonaws.com/releases/latest/GranthOS.iso",
+            "sha256": "${SHA}",
+            "published_at": "${TS}"
+          }
+          EOF
+
+      - name: Configure AWS creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload to S3 (latest)
+        run: |
+          aws s3 cp out/GranthOS.iso s3://${BUILDS_BUCKET}/releases/latest/GranthOS.iso --acl public-read
+          aws s3 cp checksums.txt    s3://${BUILDS_BUCKET}/releases/latest/checksums.txt --acl public-read
+          aws s3 cp manifest.json    s3://${BUILDS_BUCKET}/releases/latest/manifest.json --acl public-read --content-type application/json
