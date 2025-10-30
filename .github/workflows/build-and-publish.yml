@@ -22,16 +22,21 @@ jobs:
           echo "------ Makefile (head) ------"
           head -n 80 Makefile || true
 
-      # ✅ FIXED: install AWS CLI v2 manually instead of apt
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y nasm clang lld xorriso qemu-system-x86 ovmf unzip curl jq
-          echo "Installing AWS CLI v2..."
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          sudo ./aws/install
-          aws --version
+          # Ensure AWS CLI v2 is available (skip install if already present)
+          if command -v aws >/dev/null 2>&1; then
+            echo "AWS CLI already installed:"
+            aws --version
+          else
+            echo "Installing AWS CLI v2..."
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -q awscliv2.zip
+            sudo ./aws/install
+            aws --version
+          fi
 
       - name: Get Limine (binary)
         run: |
