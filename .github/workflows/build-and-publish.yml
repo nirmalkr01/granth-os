@@ -44,8 +44,15 @@ jobs:
           LIMINE_VER="v10.2.1-binary"
           curl -L -o limine.zip "https://github.com/limine-bootloader/limine/archive/refs/tags/${LIMINE_VER}.zip"
           unzip -q limine.zip
-          echo "LIMINE_DIR=$(pwd)/limine-${LIMINE_VER}" >> $GITHUB_ENV
-          ls -la "$GITHUB_WORKSPACE/limine-${LIMINE_VER}"
+          # Robustly detect the extracted directory (handles with/without leading 'v')
+          LIMINE_DIR_ABS="$(find "$PWD" -maxdepth 1 -type d -name 'limine-*' | head -n1)"
+          echo "Detected LIMINE_DIR: ${LIMINE_DIR_ABS}"
+          test -d "$LIMINE_DIR_ABS"
+          # sanity checks for files we need
+          test -f "$LIMINE_DIR_ABS/BOOTX64.EFI"
+          test -f "$LIMINE_DIR_ABS/limine-uefi-cd.bin"
+          echo "LIMINE_DIR=${LIMINE_DIR_ABS}" >> "$GITHUB_ENV"
+          ls -la "$LIMINE_DIR_ABS"
 
       - name: Build ISO (override Limine path via Make)
         env:
@@ -53,6 +60,7 @@ jobs:
         run: |
           set -eux
           make clean
+          # Pass Limine dir into your Makefile variable
           make LIMINE_DIR_WIN="$LIMINE_DIR"
           sha256sum out/GranthOS.iso | tee checksums.txt
 
