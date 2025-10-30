@@ -22,10 +22,16 @@ jobs:
           echo "------ Makefile (head) ------"
           head -n 80 Makefile || true
 
-      - name: Install deps
+      # ✅ FIXED: install AWS CLI v2 manually instead of apt
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y clang lld nasm xorriso jq awscli unzip curl
+          sudo apt install -y nasm clang lld xorriso qemu-system-x86 ovmf unzip curl jq
+          echo "Installing AWS CLI v2..."
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install
+          aws --version
 
       - name: Get Limine (binary)
         run: |
@@ -41,7 +47,6 @@ jobs:
           LIMINE_DIR: ${{ env.LIMINE_DIR }}
         run: |
           set -eux
-          # Instead of sed, override the Makefile variable directly:
           make clean
           make LIMINE_DIR_WIN="$LIMINE_DIR"
           sha256sum out/GranthOS.iso | tee checksums.txt
@@ -61,24 +66,24 @@ jobs:
           EOF
           cat manifest.json
 
-      - name: Configure AWS creds
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Upload to S3 (latest) - NO ACL (works with ACLs disabled)
+      - name: Upload to S3 (latest)
         run: |
           set -eux
           aws s3 cp out/GranthOS.iso "s3://${BUILDS_BUCKET}/releases/latest/GranthOS.iso"
           aws s3 cp checksums.txt    "s3://${BUILDS_BUCKET}/releases/latest/checksums.txt"
           aws s3 cp manifest.json    "s3://${BUILDS_BUCKET}/releases/latest/manifest.json" --content-type application/json
 
-      - name: List uploaded files (verify)
+      - name: Verify upload
         run: |
           aws s3 ls "s3://${BUILDS_BUCKET}/releases/latest/"
-          echo "Public ISO URL:"
+          echo "✅ Public ISO URL:"
           echo "https://${BUILDS_BUCKET}.s3.${AWS_REGION}.amazonaws.com/releases/latest/GranthOS.iso"
-          echo "Public manifest URL:"
+          echo "✅ Public manifest URL:"
           echo "https://${BUILDS_BUCKET}.s3.${AWS_REGION}.amazonaws.com/releases/latest/manifest.json"
