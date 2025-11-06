@@ -7,6 +7,11 @@
 #include "granth/mm/vmm.h"
 #include "granth/mm/heap.h"
 
+#include "granth/arch/gdt.h"
+#include "granth/arch/tss.h"
+#include "granth/arch/idt.h"
+#include "granth/arch/timer.h"
+
 /* --- tiny serial logger (COM1) --- */
 #define COM1_PORT 0x3F8
 static inline void outb(uint16_t p, uint8_t v){ __asm__ volatile("outb %0,%1": :"a"(v),"Nd"(p)); }
@@ -60,23 +65,35 @@ void kmain(void){
     serial_print("[FB] clear\n");
     fill(0x001E1E3A); /* dark bluish */
 
-    /* PMM bring-up */
+    /* M1: PMM / HEAP / VMM */
     pmm_init();
     struct pmm_stats ps = pmm_stats();
     serial_print_u64("[PMM] total_pages=", ps.total_pages);
     serial_print_u64("[PMM] free_pages =", ps.free_pages);
 
-    /* Heap + smoke alloc */
     heap_init();
-    void* t = kmalloc(256); (void)t;
-    serial_print("[HEAP] ok\n");
+    void* t = kmalloc(256); (void)t; serial_print("[HEAP] ok\n");
 
-    /* VMM: build our own PML4 and switch CR3 (keeps HHDM FB mapped) */
-    vmm_init();
-    serial_print("[VMM] CR3 switched\n");
+    vmm_init();  serial_print("[VMM] CR3 switched\n");
 
-    /* Visual acceptance: green stripe if all good */
-    stripe(0x0000FF00, 32, 16); /* green bar */
+    /* ===== M2: GDT/TSS/IDT/TIMER ===== */
+    tss_init();
+    gdt_init();
+    idt_init();
+
+    /* PIT timer @ 100 Hz */
+    timer_init(100);
+    serial_print("[TIMER] hz=100\n");
+
+    /* Visual M2: thin green line */
+    stripe(0x0000FF00, 48, 8);
+
+    /* demo: sleep 500 ms */
+    sleep_ms(500);
+    serial_print("[SLEEP] 500ms ok\n");
+
+    // Uncomment to test divide-by-zero exception handling:
+    // idt_test_div0();
 
     serial_print("[OK] halt\n");
     for(;;) __asm__ volatile("hlt");

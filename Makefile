@@ -46,10 +46,20 @@ OVMF_VARS_CANDIDATES := \
 OVMF_CODE_SYS := $(shell for p in $(OVMF_CODE_CANDIDATES); do [ -f $$p ] && echo $$p && break; done)
 OVMF_VARS_SYS := $(shell for p in $(OVMF_VARS_CANDIDATES); do [ -f $$p ] && echo $$p && break; done)
 
-C_SRCS  := $(shell find $(SRC) -name '*.c')
-ASM_SRCS:= $(shell find $(SRC) -name '*.s' -o -name '*.S' -o -name '*.asm')
-OBJS    := $(patsubst $(SRC)/%, $(OUT)/%, $(C_SRCS:.c=.o)) \
-           $(patsubst $(SRC)/%, $(OUT)/%, $(ASM_SRCS:.s=.o))
+# --------- Auto-discover sources ---------
+C_SRCS       := $(shell find $(SRC) -name '*.c')
+S_SRCS_LOW   := $(shell find $(SRC) -name '*.s')
+S_SRCS_UP    := $(shell find $(SRC) -name '*.S')
+ASM_SRCS_NASM:= $(shell find $(SRC) -name '*.asm')
+
+# Map sources to objects under out/**
+C_OBJS       := $(patsubst $(SRC)/%, $(OUT)/%, $(C_SRCS:.c=.o))
+S_OBJS_LOW   := $(patsubst $(SRC)/%, $(OUT)/%, $(S_SRCS_LOW:.s=.o))
+S_OBJS_UP    := $(patsubst $(SRC)/%, $(OUT)/%, $(S_SRCS_UP:.S=.o))
+ASM_OBJS     := $(patsubst $(SRC)/%, $(OUT)/%, $(ASM_SRCS_NASM:.asm=.o))
+
+OBJS := $(C_OBJS) $(S_OBJS_LOW) $(S_OBJS_UP) $(ASM_OBJS)
+# -----------------------------------------
 
 all: $(OUT)/$(TARGET) iso
 
@@ -57,6 +67,7 @@ $(OUT)/$(TARGET): $(OBJS) linker.ld
 	@mkdir -p $(OUT)
 	$(LD) $(LDFLAGS) $(OBJS) -o $(OUT)/$(TARGET)
 
+# Pattern rules to mirror src/** -> out/**
 $(OUT)/%.o: $(SRC)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -104,7 +115,8 @@ run-qemu: iso firmware
 	  -drive if=pflash,format=raw,file="$(FW_VARS)" \
 	  -drive file=$(ISO),media=cdrom,if=ide \
 	  -no-reboot -no-shutdown \
-	  -display default -serial stdio
+	  -display default -serial stdio \
+	  -monitor none
 
 run-seabios: iso
 	qemu-system-x86_64 -machine q35 -m 512M \
